@@ -24,14 +24,12 @@ def read_root():
 
 @app.post("/api/get_video_info")
 async def get_video_info(request: VideoRequest):
-    # Configuración maestra de yt-dlp (Sin restricción de formato)
+    # Configuración de yt-dlp limpia
     ydl_opts = {
         'quiet': True,
         'no_warnings': True,
         'skip_download': True,
-        # Eliminamos la línea 'format': 'best' para que traiga toda la lista sin fallar
-        'cookiefile': 'cookies.txt', 
-        'impersonate': 'chrome'      
+        'cookiefile': 'cookies.txt' # Mantiene la compatibilidad con YouTube usando tus credenciales
     }
 
     try:
@@ -56,7 +54,7 @@ async def get_video_info(request: VideoRequest):
                         "directUrl": f.get('url')
                     })
             
-            # Si YouTube no manda MP4 pre-unidos, sacamos el enlace general que logre armar
+            # Si no hay formatos pre-unidos, sacamos el enlace general que logre armar
             if not opciones_encontradas:
                  opciones_encontradas.append({
                         "resolution": "Mejor calidad disponible",
@@ -64,7 +62,7 @@ async def get_video_info(request: VideoRequest):
                         "directUrl": info.get('url')
                  })
 
-            # Eliminar duplicados
+            # Eliminar duplicados para que el menú de Android se vea limpio
             opciones_unicas = list({v['resolution']: v for v in opciones_encontradas}.values())
 
             return {
