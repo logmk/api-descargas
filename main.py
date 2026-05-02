@@ -6,7 +6,7 @@ import os
 
 app = FastAPI(title="API Descargador de Videos")
 
-# Permitimos conexiones desde cualquier origen (necesario para tu app móvil)
+# Permitimos conexiones desde tu app de Android
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -24,14 +24,14 @@ def read_root():
 
 @app.post("/api/get_video_info")
 async def get_video_info(request: VideoRequest):
-    # Configuración de yt-dlp
+    # Configuración maestra de yt-dlp
     ydl_opts = {
         'quiet': True,
         'no_warnings': True,
         'skip_download': True,
         'format': 'best',
-        # LA LLAVE MÁGICA: Usamos las cookies para demostrar que somos "humanos"
-        'cookiefile': 'cookies.txt' 
+        'cookiefile': 'cookies.txt', # Mantiene la compatibilidad con YouTube
+        'impersonate': 'chrome'      # Fuerza el uso del disfraz de Chrome para Dailymotion
     }
 
     try:
@@ -39,7 +39,7 @@ async def get_video_info(request: VideoRequest):
             info = ydl.extract_info(request.url, download=False)
             opciones_encontradas = []
             
-            # Buscamos formatos MP4 que contengan audio y video integrados
+            # Buscar formatos MP4 válidos (audio y video juntos)
             for f in info.get('formats', []):
                 if f.get('vcodec') != 'none' and f.get('acodec') != 'none' and f.get('ext') == 'mp4':
                     bytes_size = f.get('filesize') or f.get('filesize_approx')
@@ -52,7 +52,7 @@ async def get_video_info(request: VideoRequest):
                         "directUrl": f.get('url')
                     })
             
-            # Si la web es rara y no reporta formatos, devolvemos el mejor enlace general
+            # Si no hay formatos detallados, devolver el enlace maestro
             if not opciones_encontradas:
                  opciones_encontradas.append({
                         "resolution": "Mejor calidad disponible",
@@ -60,7 +60,7 @@ async def get_video_info(request: VideoRequest):
                         "directUrl": info.get('url')
                  })
 
-            # Limpiamos duplicados
+            # Eliminar duplicados
             opciones_unicas = list({v['resolution']: v for v in opciones_encontradas}.values())
 
             return {
@@ -74,6 +74,5 @@ async def get_video_info(request: VideoRequest):
 
 if __name__ == "__main__":
     import uvicorn
-    # Render inyecta el puerto dinámicamente
     port = int(os.environ.get("PORT", 8000))
     uvicorn.run(app, host="0.0.0.0", port=port)
