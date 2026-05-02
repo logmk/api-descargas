@@ -23,66 +23,54 @@ def read_root():
 
 @app.post("/api/get_video_info")
 async def get_video_info(request: VideoRequest):
-    # Configuración blindada a prueba de fallos
+    # Configuración de máxima compatibilidad
     ydl_opts = {
         'quiet': True,
         'no_warnings': True,
         'skip_download': True,
-        'format': 'b',             # 'b' (best): Fuerza a traer solo formatos pre-unidos (audio+video)
-        'ignoreerrors': True,      # Evita que el servidor colapse si la plataforma bloquea un formato
-        'cookiefile': 'cookies.txt'# Mantiene tu pase VIP para YouTube
+        'format': 'best', # Volvemos a pedir el mejor formato disponible de forma general
+        'cookiefile': 'cookies.txt', # Necesario para YouTube
+        'ignoreerrors': True
     }
 
     try:
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-            # Si extraer la info normal falla, lo intentamos sin cookies por si acaso
+            # Extraer información
             info = ydl.extract_info(request.url, download=False)
             
             if not info:
-                # Intento de rescate sin cookies (útil para Dailymotion si las cookies de YT interfieren)
-                ydl_opts_rescue = {
-                    'quiet': True,
-                    'no_warnings': True,
-                    'skip_download': True,
-                    'format': 'b',
-                    'ignoreerrors': True
-                }
-                with yt_dlp.YoutubeDL(ydl_opts_rescue) as ydl_rescue:
-                    info = ydl_rescue.extract_info(request.url, download=False)
-
-            if not info:
-                raise Exception("Bloqueo de plataforma o URL inválida.")
+                raise Exception("La plataforma bloqueó la extracción o la URL es incorrecta.")
 
             opciones_encontradas = []
             
-            # Buscamos en la lista de formatos
-            for f in info.get('formats', []):
-                # Filtramos para que solo sean MP4 con video y audio
-                if f.get('vcodec') != 'none' and f.get('acodec') != 'none' and f.get('ext') == 'mp4':
-                    bytes_size = f.get('filesize') or f.get('filesize_approx')
-                    size_mb = round(bytes_size / (1024 * 1024), 2) if bytes_size else "Desconocido"
+            # Recorremos formatos buscando los que tengan video y audio
+            formats = info.get('formats', [])
+            for f in formats:
+                # Buscamos archivos que tengan audio y video (no fragmentados)
+                if f.get('vcodec') != 'none' and f.get('acodec') != 'none':
+                    ext = f.get('ext', 'mp4')
                     res = f.get('format_note') or f.get('resolution') or f"{f.get('height')}p"
                     
+                    # Calcular tamaño
+                    bytes_size = f.get('filesize') or f.get('filesize_approx')
+                    size_mb = f"{round(bytes_size / (1024 * 1024), 2)} MB" if bytes_size else "Tamaño desconocido"
+                    
                     opciones_encontradas.append({
-                        "resolution": f"{res} (MP4)",
-                        "sizeMb": f"{size_mb} MB" if size_mb != "Desconocido" else "Tamaño desconocido",
+                        "resolution": f"{res} ({ext.upper()})",
+                        "sizeMb": size_mb,
                         "directUrl": f.get('url')
                     })
-            
-            # Si las plataformas ocultan los formatos detallados, sacamos el enlace maestro de la info general
-            if not opciones_encontradas and info.get('url'):
-                 opciones_encontradas.append({
-                        "resolution": "Mejor calidad disponible",
-                        "sizeMb": "Desconocido",
-                        "directUrl": info.get('url')
-                 })
 
-            # Limpiar duplicados
+            # SI NO SE ENCONTRARON FORMATOS FILTRADOS, USAR EL ENLACE MAESTRO DIRECTO
+            if not opciones_encontradas:
+                opciones_encontradas.append({
+                    "resolution": "Calidad Estándar (Auto)",
+                    "sizeMb": "Variable",
+                    "directUrl": info.get('url')
+                })
+
+            # Eliminar duplicados por resolución
             opciones_unicas = list({v['resolution']: v for v in opciones_encontradas}.values())
-
-            # Validar que al menos tengamos una opción
-            if not opciones_unicas:
-                 raise Exception("El video es privado, tiene restricción de edad o formato no compatible.")
 
             return {
                 "status": "success", 
