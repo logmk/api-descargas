@@ -24,19 +24,23 @@ def read_root():
 
 @app.post("/api/get_video_info")
 async def get_video_info(request: VideoRequest):
-    # Configuración maestra de yt-dlp
+    # Configuración maestra de yt-dlp (Sin restricción de formato)
     ydl_opts = {
         'quiet': True,
         'no_warnings': True,
         'skip_download': True,
-        'format': 'best',
-        'cookiefile': 'cookies.txt', # Mantiene la compatibilidad con YouTube
-        'impersonate': 'chrome'      # Fuerza el uso del disfraz de Chrome para Dailymotion
+        # Eliminamos la línea 'format': 'best' para que traiga toda la lista sin fallar
+        'cookiefile': 'cookies.txt', 
+        'impersonate': 'chrome'      
     }
 
     try:
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
             info = ydl.extract_info(request.url, download=False)
+            
+            if not info:
+                raise Exception("No se pudo extraer información del video.")
+
             opciones_encontradas = []
             
             # Buscar formatos MP4 válidos (audio y video juntos)
@@ -52,7 +56,7 @@ async def get_video_info(request: VideoRequest):
                         "directUrl": f.get('url')
                     })
             
-            # Si no hay formatos detallados, devolver el enlace maestro
+            # Si YouTube no manda MP4 pre-unidos, sacamos el enlace general que logre armar
             if not opciones_encontradas:
                  opciones_encontradas.append({
                         "resolution": "Mejor calidad disponible",
