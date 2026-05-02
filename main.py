@@ -19,62 +19,64 @@ class VideoRequest(BaseModel):
 
 @app.get("/")
 def read_root():
-    return {"status": "online", "message": "API de Descarga de Videos funcionando correctamente"}
+    return {"status": "online"}
 
 @app.post("/api/get_video_info")
 async def get_video_info(request: VideoRequest):
-    # Configuración de máxima compatibilidad
+    # Configuración para evadir detecciones de centros de datos
     ydl_opts = {
         'quiet': True,
         'no_warnings': True,
         'skip_download': True,
-        'format': 'best', # Volvemos a pedir el mejor formato disponible de forma general
-        'cookiefile': 'cookies.txt', # Necesario para YouTube
-        'ignoreerrors': True
+        'cookiefile': 'cookies.txt',
+        # Forzamos a yt-dlp a que no use protocolos que delatan a Render
+        'extractor_args': {
+            'youtube': {
+                'player_client': ['android', 'ios'],
+                'skip': ['hls', 'dash']
+            }
+        },
+        'user_agent': 'Mozilla/5.0 (iPhone; CPU iPhone OS 17_4 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.4 Mobile/15E148 Safari/604.1',
+        'nocheckcertificate': True,
+        'ignoreerrors': True,
     }
 
     try:
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-            # Extraer información
             info = ydl.extract_info(request.url, download=False)
             
             if not info:
-                raise Exception("La plataforma bloqueó la extracción o la URL es incorrecta.")
+                raise Exception("Bloqueo total de la plataforma (IP Baneada).")
 
             opciones_encontradas = []
             
-            # Recorremos formatos buscando los que tengan video y audio
+            # Intentar capturar formatos MP4 directos
             formats = info.get('formats', [])
             for f in formats:
-                # Buscamos archivos que tengan audio y video (no fragmentados)
-                if f.get('vcodec') != 'none' and f.get('acodec') != 'none':
-                    ext = f.get('ext', 'mp4')
+                if f.get('vcodec') != 'none' and f.get('acodec') != 'none' and f.get('ext') == 'mp4':
                     res = f.get('format_note') or f.get('resolution') or f"{f.get('height')}p"
-                    
-                    # Calcular tamaño
                     bytes_size = f.get('filesize') or f.get('filesize_approx')
-                    size_mb = f"{round(bytes_size / (1024 * 1024), 2)} MB" if bytes_size else "Tamaño desconocido"
+                    size_mb = f"{round(bytes_size / (1024 * 1024), 2)} MB" if bytes_size else "Variable"
                     
                     opciones_encontradas.append({
-                        "resolution": f"{res} ({ext.upper()})",
+                        "resolution": f"{res} (MP4)",
                         "sizeMb": size_mb,
                         "directUrl": f.get('url')
                     })
 
-            # SI NO SE ENCONTRARON FORMATOS FILTRADOS, USAR EL ENLACE MAESTRO DIRECTO
+            # Si el filtro falla, entregar el mejor enlace que yt-dlp pudo rescatar
             if not opciones_encontradas:
                 opciones_encontradas.append({
-                    "resolution": "Calidad Estándar (Auto)",
+                    "resolution": "Calidad Estándar (Rescate)",
                     "sizeMb": "Variable",
                     "directUrl": info.get('url')
                 })
 
-            # Eliminar duplicados por resolución
             opciones_unicas = list({v['resolution']: v for v in opciones_encontradas}.values())
 
             return {
                 "status": "success", 
-                "title": info.get('title', 'Video sin título'), 
+                "title": info.get('title', 'Video detectado'), 
                 "options": opciones_unicas
             }
 
